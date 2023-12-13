@@ -1,5 +1,5 @@
+import msgpack
 import gzip
-import json
 from PIL import Image
 
 class LIF:
@@ -14,15 +14,21 @@ class LIF:
 
     def _read_image_data(self):
         try:
-            self.image_data = json.loads(self.image_data)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Error decoding JSON data: {e}")
+            decoded_data = msgpack.loads(self.image_data, raw=False)
+            self.meta_data = decoded_data.get('meta_data', {})
+            self.pixel_data = decoded_data.get('pixels', [])
+        except Exception as e:
+            raise ValueError(f"Error decoding MessagePack data: {e}")
 
-    def _to_json(self):
+    def _to_msgpack(self):
         try:
-            self.image_data = json.dumps(self.image_data)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Error encoding to JSON: {e}")
+            encoded_data = {
+                'meta_data': self.meta_data,
+                'pixels': self.pixel_data,
+            }
+            self.image_data = msgpack.dumps(encoded_data, use_bin_type=True)
+        except Exception as e:
+            raise ValueError(f"Error encoding to MessagePack: {e}")
 
     def open(self, path):
         try:
@@ -30,10 +36,7 @@ class LIF:
             self._uncompress()
             self._read_image_data()
 
-            self.meta_data = self.image_data.get('meta_data', {})
-            self.pixel_data = self.image_data.get('pixels', {})
-
-            if not isinstance(self.meta_data, dict) or not isinstance(self.pixel_data, dict):
+            if not isinstance(self.meta_data, dict) or not isinstance(self.pixel_data, list):
                 raise ValueError("Invalid data format")
 
         except Exception as e:
@@ -41,11 +44,7 @@ class LIF:
 
     def write(self, path):
         try:
-            self.image_data = dict()
-
-            self.image_data['meta_data'] = self.meta_data
-            self._to_json()
-            self.image_data = bytes(self.image_data)
+            self._to_msgpack()
             self._compress()
 
             open(path, "wb").write(self.image_data)
@@ -63,17 +62,18 @@ class LIF:
             pix = image.load()
 
             self.meta_data = dict()
-            self.pixel_data = dict()
+            self.pixel_data = list()
 
             width, height = image.size
 
             self.meta_data["size"] = (width, height)
 
             for x in range(width):
-                current_row = self.pixel_data.get(str(x), [])
+                current_row = []
                 for y in range(height):
                     rgba_value = pix[x, y][:3]
                     current_row.append(rgba_value)
+                self.pixel_data.append(current_row)
 
         except Exception as e:
             raise ValueError(f"Error converting PIL image to LIF: {e}")
@@ -89,9 +89,8 @@ class LIF:
             result_pixels = result_image.load()
 
             # Iterate through pixel data and set values in the new image
-            for x in range(width):
-                current_row = self.pixel_data.get(str(x), [])
-                for y, rgba_value in enumerate(current_row):
+            for x, row in enumerate(self.pixel_data):
+                for y, rgba_value in enumerate(row):
                     result_pixels[x, y] = tuple(rgba_value) + (255,)
 
             return result_image

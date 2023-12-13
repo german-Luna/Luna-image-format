@@ -1,10 +1,8 @@
 from PIL import Image
-import numpy as np
 from LIF import LIF
 
 # Example: Create a sample PIL image
-width, height = 100, 100
-sample_image = Image.fromarray(np.random.randint(0, 256, size=(width, height, 3), dtype=np.uint8))
+sample_image = Image.open("luna.jpg")
 
 # Example: Save the PIL image using LIF format
 lif_instance = LIF()
